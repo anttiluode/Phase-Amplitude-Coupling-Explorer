@@ -2,6 +2,10 @@
 
 ![Pac Image](pac.png)
 
+Live at: 
+
+https://anttiluode.github.io/Phase-Amplitude-Coupling-Explorer/
+
 An advanced, browser-based visualization tool for exploring Phase-Amplitude Coupling (PAC) in real EEG data. This explorer translates
 the complex dynamics of neural synchrony into an intuitive, explorable visual landscape, revealing the intricate "texture" of brain activity over time.
 
