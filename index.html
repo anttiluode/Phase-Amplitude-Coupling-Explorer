@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EEG Phase-Amplitude Coupling Explorer</title>
+    <style>
+        body { margin: 0; padding: 20px; background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%); color: #00ff88; font-family: 'Courier New', monospace; overflow-x: auto; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .header h1 { color: #00ff88; margin: 0; font-size: 2em; text-shadow: 0 0 10px #00ff88; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px; padding: 15px; background: rgba(0, 20, 40, 0.9); border-radius: 10px; border: 2px solid #00ff88; backdrop-filter: blur(10px); }
+        .control-section { padding: 15px; background: rgba(0, 0, 0, 0.3); border-radius: 8px; border: 1px solid #333; display: flex; flex-direction: column; }
+        .control-section h3 { margin: 0 0 15px 0; color: #ff6b9d; font-size: 1.1em; text-shadow: 0 0 5px #ff6b9d; }
+        .file-input { width: 100%; padding: 10px; background: rgba(0, 0, 0, 0.5); border: 2px dashed #00ff88; color: #00ff88; border-radius: 8px; margin-bottom: 10px; text-align: center; cursor: pointer; transition: all 0.3s; box-sizing: border-box; }
+        .file-input:hover { background: rgba(0, 255, 136, 0.1); box-shadow: 0 0 20px rgba(0, 255, 136, 0.3); }
+        #fileInput { display: none; }
+        .button-group { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+        button { padding: 8px 12px; background: linear-gradient(45deg, #ff6b9d, #c44569); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: 'Courier New', monospace; transition: all 0.3s; }
+        button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(255, 107, 157, 0.4); }
+        button:disabled { background: #555; cursor: not-allowed; transform: none; box-shadow: none; }
+        .display-mode-btn.active { background: linear-gradient(45deg, #00ff88, #00aa55) !important; }
+        .electrode-btn { margin: 2px; padding: 4px 8px; background: rgba(0, 0, 0, 0.5); border: 1px solid #333; color: #00ff88; cursor: pointer; border-radius: 3px; font-size: 11px; }
+        .electrode-btn.selected { background: linear-gradient(45deg, #00ff88, #00aa55); border-color: #00ff88; box-shadow: 0 0 10px rgba(0, 255, 136, 0.5); }
+        .slider-group { margin: 10px 0; }
+        .slider-group label { display: block; margin-bottom: 5px; font-size: 12px; color: #00ffff; }
+        select, input[type="range"] { width: 100%; -webkit-appearance: none; margin: 0; padding: 0; box-sizing: border-box; }
+        select { padding: 8px; background: rgba(0,0,0,0.5); border: 1px solid #333; color: #00ff88; border-radius: 4px; font-family: 'Courier New', monospace; }
+        input[type="range"] { margin-bottom: 5px; height: 4px; background: #333; outline: none; border-radius: 2px; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: #00ff88; cursor: pointer; border-radius: 50%; box-shadow: 0 0 8px #00ff88; }
+        .main-display { background: rgba(0, 0, 0, 0.8); border-radius: 10px; border: 2px solid #00ff88; padding: 15px; min-height: 600px; }
+        .canvas-container { position: relative; width: 100%; height: 600px; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid #333; cursor: grab; }
+        canvas { position: absolute; top: 0; left: 0; display: block; width: 100%; height: 100%; }
+        #moireCanvas { pointer-events: auto; } /* Allow mouse events for pan/zoom */
+        .electrode-buttons { flex-grow: 1; overflow-y: auto; border: 1px solid #333; border-radius: 4px; padding: 8px; background: rgba(0, 0, 0, 0.3); }
+        .status { margin-top: 15px; padding: 10px; background: rgba(0, 20, 40, 0.9); border: 1px solid #333; border-radius: 4px; font-size: 12px; color: #00ff88; }
+        .glow { animation: glow 2s ease-in-out infinite alternate; }
+        @keyframes glow { from { text-shadow: 0 0 5px currentColor; } to { text-shadow: 0 0 20px currentColor; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="glow">🧠 EEG Phase-Amplitude Coupling Explorer</h1>
+            <p>Visualizing how slow rhythms organize fast brain activity</p>
+        </div>
+        
+        <div class="controls">
+             <div class="control-section">
+                <h3>📂 Data & Display</h3>
+                <div class="file-input" onclick="document.getElementById('fileInput').click()">
+                    <div id="fileInputLabel">📁 Load Real EEG File</div>
+                    <div style="font-size: 9px; margin-top: 5px; color: #888;">EDF format supported</div>
+                </div>
+                <input type="file" accept=".edf" id="fileInput">
+                <div class="button-group">
+                    <button onclick="setDisplayMode('grid')" class="display-mode-btn active" id="gridBtn">Grid</button>
+                    <button onclick="setDisplayMode('overlay')" class="display-mode-btn" id="overlayBtn">Overlay</button>
+                    <button onclick="setDisplayMode('moire')" class="display-mode-btn" id="moireBtn">🌊 PAC Moiré</button>
+                    <button onclick="setDisplayMode('timeline')" class="display-mode-btn" id="timelineBtn">📜 Timeline</button>
+                </div>
+                <div class="button-group">
+                    <button id="playBtn" onclick="togglePlayback()">▶️ Play</button>
+                    <button onclick="resetTime()">🔄 Reset</button>
+                </div>
+                <div class="slider-group">
+                    <label for="timeWindow">Scalogram Window: <span id="timeWindowValue">2.0s</span></label>
+                    <input type="range" id="timeWindow" min="0.5" max="10" step="0.1" value="2" oninput="updateSliderValue('timeWindow', 's'); updateView();">
+                </div>
+                <select id="colorMap" onchange="updateView()">
+                    <option value="viridis">Viridis</option>
+                    <option value="plasma">Plasma</option>
+                    <option value="hot">Hot</option>
+                </select>
+            </div>
+            
+            <div class="control-section">
+                <h3>🎯 Electrode Selection</h3>
+                <div class="button-group">
+                    <button onclick="selectAllElectrodes()">All</button>
+                    <button onclick="clearElectrodes()">Clear</button>
+                    <button onclick="selectFrontalElectrodes()">Frontal</button>
+                    <button onclick="selectParietalElectrodes()">Parietal</button>
+                </div>
+                <div class="electrode-buttons" id="electrodeButtons">
+                    <p style="color: #888; font-size: 11px;">Load file to see electrodes</p>
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <h3>⚡ Moiré / Timeline Analysis</h3>
+                <p style="font-size: 11px; color: #888;">Select the slow rhythm (Phase) and fast rhythm (Amplitude) to visualize their coupling.</p>
+                <div class="slider-group">
+                    <label for="pacPhase">Phase Freq (Slow): <span id="pacPhaseValue"></span></label>
+                    <select id="pacPhase" onchange="updatePACLabels(); updateView(); resetTime();">
+                        <option value="Delta">Delta (1-4Hz)</option>
+                        <option value="Theta" selected>Theta (4-8Hz)</option>
+                        <option value="Alpha">Alpha (8-13Hz)</option>
+                    </select>
+                </div>
+                <div class="slider-group">
+                    <label for="pacAmp">Amplitude Freq (Fast): <span id="pacAmpValue"></span></label>
+                    <select id="pacAmp" onchange="updatePACLabels(); updateView(); resetTime();">
+                        <option value="Beta">Beta (13-30Hz)</option>
+                        <option value="Gamma" selected>Gamma (30-50Hz)</option>
+                        <option value="HighGamma">High Gamma (50-100Hz)</option>
+                    </select>
+                </div>
+                <p style="font-size: 11px; color: #888; margin-top: 10px;" id="timelineInstructions">In Timeline mode: Drag to Pan, Scroll to Zoom.</p>
+            </div>
+        </div>
+        
+        <div class="main-display">
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="scalogramCanvas"></canvas>
+                <canvas id="moireCanvas"></canvas>
+            </div>
+            <div class="status" id="status">🧠 Ready to explore neural time-frequency landscapes...</div>
+        </div>
+    </div>
+
+    <script>
+        // --- GLOBAL VARIABLES ---
+        let eegData = null, isPlaying = false, currentTime = 0, animationFrame = null;
+        let displayMode = 'grid', selectedElectrodes = new Set();
+        let canvas, ctx, moireCanvas, moireCtx;
+        
+        // --- TIMELINE MODE VARIABLES ---
+        let historyBuffer = [];
+        let nextHistoryX = 0;
+        const SLICE_WIDTH = 5; // Width of each new vertical slice in pixels
+        let viewTransform = { x: 0, scale: 1.0 };
+        let isPanning = false;
+        let lastMousePos = { x: 0, y: 0 };
+        
+        const FREQ_BANDS = {
+            'Delta': {low: 1, high: 4}, 'Theta': {low: 4, high: 8}, 'Alpha': {low: 8, high: 13},
+            'Beta': {low: 13, high: 30}, 'Gamma': {low: 30, high: 50}, 'HighGamma': {low: 50, high: 100}
+        };
+
+        // --- VISUALIZATION LOGIC ---
+
+        function renderPACMoire() {
+            if (!moireCanvas) return;
+            const width = moireCanvas.width / window.devicePixelRatio;
+            const height = moireCanvas.height / window.devicePixelRatio;
+            moireCtx.clearRect(0, 0, width, height);
+
+            const sliceData = calculatePACMoireSlice(currentTime);
+            if (!sliceData) return;
+            
+            const { phase, amplitude, maxAmp } = sliceData;
+            const gridSize = 64;
+            const stepX = width / gridSize;
+            const stepY = height / gridSize;
+
+            for (let y = 0; y < gridSize; y++) {
+                for (let x = 0; x < gridSize; x++) {
+                    const u = x / gridSize; const v = y / gridSize;
+                    const sampleIdx = Math.floor(u * (phase.length - 1));
+                    const p = phase[sampleIdx];
+                    const carrierWave = Math.sin(p + (v * Math.PI * 4));
+                    const ampNormalized = Math.min(1.0, amplitude[sampleIdx] / maxAmp);
+                    const brightness = Math.pow(ampNormalized, 1.5) * 1.5;
+
+                    if (brightness > 0.1) {
+                        const finalValue = carrierWave * brightness;
+                        let r, g, b;
+                        if (finalValue > 0) { r = 255; g = 255; b = 150; }
+                        else { r = 150; g = 255; b = 255; }
+                        moireCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${Math.abs(finalValue)})`;
+                        moireCtx.fillRect(x * stepX, y * stepY, stepX, stepY);
+                    }
+                }
+            }
+            drawMoireOverlayText();
+        }
+        
+        function renderTimelineView() {
+            if (!moireCanvas) return;
+            const width = moireCanvas.width / window.devicePixelRatio;
+            const height = moireCanvas.height / window.devicePixelRatio;
+            
+            moireCtx.clearRect(0, 0, width, height);
+            moireCtx.save();
+            moireCtx.translate(viewTransform.x, 0);
+            moireCtx.scale(viewTransform.scale, viewTransform.scale);
+            
+            const gridSizeY = 64;
+            const effectiveHeight = height / viewTransform.scale;
+            const stepY = effectiveHeight / gridSizeY;
+
+            for (const slice of historyBuffer) {
+                const sliceLeftEdge = slice.x;
+                const sliceRightEdge = slice.x + SLICE_WIDTH;
+                const viewLeftEdge = (-viewTransform.x) / viewTransform.scale;
+                const viewRightEdge = ((-viewTransform.x + width) / viewTransform.scale);
+                if (sliceRightEdge < viewLeftEdge || sliceLeftEdge > viewRightEdge) continue;
+
+                const { phase, amplitude, maxAmp } = slice.data;
+                for (let y = 0; y < gridSizeY; y++) {
+                    const v = y / gridSizeY;
+                    const sampleIdx = Math.floor(phase.length / 2);
+                    const p = phase[sampleIdx];
+                    const carrierWave = Math.sin(p + (v * Math.PI * 4));
+                    const ampNormalized = Math.min(1.0, amplitude[sampleIdx] / maxAmp);
+                    const brightness = Math.pow(ampNormalized, 1.5) * 1.5;
+
+                    if (brightness > 0.1) {
+                        const finalValue = carrierWave * brightness;
+                        let r, g, b;
+                        if (finalValue > 0) { r = 255; g = 255; b = 150; }
+                        else { r = 150; g = 255; b = 255; }
+                        moireCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${Math.abs(finalValue)})`;
+                        moireCtx.fillRect(slice.x, y * stepY, SLICE_WIDTH, stepY);
+                    }
+                }
+            }
+            moireCtx.restore();
+            drawMoireOverlayText();
+        }
+
+        function calculatePACMoireSlice(time) {
+            if (!eegData || selectedElectrodes.size === 0) return null;
+            const sampleRate = eegData.sampleRate;
+            const windowSeconds = 1.0;
+            const startSample = Math.floor(time * sampleRate);
+            const windowSamples = Math.floor(windowSeconds * sampleRate);
+
+            if ((startSample + windowSamples) > eegData.data[0].length) return null;
+
+            const phaseBandName = document.getElementById('pacPhase').value;
+            const ampBandName = document.getElementById('pacAmp').value;
+            const phaseBand = FREQ_BANDS[phaseBandName];
+            const ampBand = FREQ_BANDS[ampBandName];
+
+            const combinedSignal = new Float32Array(windowSamples).fill(0);
+            selectedElectrodes.forEach(electrode => {
+                const channelIdx = eegData.channels.indexOf(electrode);
+                if (channelIdx !== -1) {
+                    for (let t = 0; t < windowSamples; t++) {
+                        combinedSignal[t] += eegData.data[channelIdx][startSample + t];
+                    }
+                }
+            });
+            if (selectedElectrodes.size > 1) {
+                for (let i = 0; i < combinedSignal.length; i++) combinedSignal[i] /= selectedElectrodes.size;
+            }
+
+            const { phase, amplitude } = getPhaseAndAmplitude(combinedSignal, phaseBand, ampBand, sampleRate);
+            if (phase.length === 0 || amplitude.length === 0) return null;
+            const maxAmp = Math.max(...amplitude, 1e-9);
+
+            return { phase, amplitude, maxAmp };
+        }
+
+        function drawMoireOverlayText() {
+            const phaseBandName = document.getElementById('pacPhase').value;
+            const ampBandName = document.getElementById('pacAmp').value;
+            moireCtx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            moireCtx.fillRect(5, 5, 450, 70);
+            moireCtx.fillStyle = '#00ff88';
+            moireCtx.font = 'bold 14px Courier New';
+            moireCtx.fillText(`🌊 Phase-Amplitude Coupling: ${phaseBandName}/${ampBandName}`, 10, 22);
+            moireCtx.font = '11px Courier New';
+            moireCtx.fillText(`Showing how the rhythm of ${phaseBandName} organizes the power of ${ampBandName}.`, 10, 42);
+            moireCtx.fillStyle = '#00ffff';
+            moireCtx.fillText('Structured patterns = strong neural coordination.', 10, 62);
+        }
+
+        function updateView() {
+            if (!eegData || !ctx) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (displayMode === 'moire') {
+                renderPACMoire();
+                return;
+            }
+            if(displayMode !== 'timeline') {
+                 moireCtx.clearRect(0, 0, moireCanvas.width, moireCanvas.height);
+            }
+            if (displayMode === 'timeline') {
+                renderTimelineView();
+                return;
+            }
+
+            if (selectedElectrodes.size === 0) {
+                ctx.fillStyle = '#00ff88';
+                ctx.font = '16px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('Select electrodes to view scalogram', canvas.width / 2 / window.devicePixelRatio, canvas.height / 2 / window.devicePixelRatio);
+                return;
+            }
+            
+            const timeWindow = parseFloat(document.getElementById('timeWindow').value);
+            const startSample = Math.floor(currentTime * eegData.sampleRate);
+            const endSample = Math.min(startSample + Math.floor(timeWindow * eegData.sampleRate), eegData.data[0].length);
+            if (startSample >= endSample) return;
+
+            const electrodeArray = Array.from(selectedElectrodes);
+            const canvasWidth = canvas.width / window.devicePixelRatio;
+            const canvasHeight = canvas.height / window.devicePixelRatio;
+            const numFreqs = 64;
+            const scales = Array.from({length: numFreqs}, (_, i) => eegData.sampleRate / (1 + (99 * i / (numFreqs - 1))));
+
+            if (displayMode === 'grid') {
+                const cols = Math.ceil(Math.sqrt(electrodeArray.length));
+                const rows = Math.ceil(electrodeArray.length / cols);
+                const cellWidth = canvasWidth / cols;
+                const cellHeight = canvasHeight / rows;
+                electrodeArray.forEach((electrode, idx) => {
+                    const row = Math.floor(idx / cols);
+                    const col = idx % cols;
+                    drawScalogramForElectrode(electrode, col * cellWidth, row * cellHeight, cellWidth, cellHeight, startSample, endSample, scales);
+                });
+            } else if (displayMode === 'overlay') {
+                electrodeArray.forEach(electrode => {
+                    drawScalogramForElectrode(electrode, 0, 0, canvasWidth, canvasHeight, startSample, endSample, scales, true);
+                });
+            }
+        }
+        
+        function drawScalogramForElectrode(electrode, x, y, width, height, startSample, endSample, scales, overlay = false) {
+            const channelIdx = eegData.channels.indexOf(electrode);
+            if (channelIdx === -1) return;
+            const channelData = eegData.data[channelIdx].slice(startSample, endSample);
+            if (channelData.length === 0) return;
+            const cwtResult = cwt(channelData, scales);
+            const colorMap = document.getElementById('colorMap').value;
+            for (let freqIdx = 0; freqIdx < cwtResult.length; freqIdx++) {
+                for (let timeIdx = 0; timeIdx < cwtResult[freqIdx].length; timeIdx++) {
+                    const value = cwtResult[freqIdx][timeIdx] * 2.0;
+                    const normalizedValue = Math.min(1, Math.pow(value / 10, 1.5));
+                    if (normalizedValue < 0.01) continue;
+                    const pixelX = x + (timeIdx / cwtResult[freqIdx].length) * width;
+                    const pixelY = y + (1 - freqIdx / cwtResult.length) * height;
+                    ctx.globalAlpha = overlay ? 0.3 : 1.0;
+                    ctx.fillStyle = getColorFromMap(normalizedValue, colorMap);
+                    ctx.fillRect(pixelX, pixelY, Math.ceil(width / cwtResult[freqIdx].length), Math.ceil(height / cwtResult.length));
+                }
+            }
+            ctx.globalAlpha = 1.0;
+            ctx.fillStyle = '#00ff88';
+            ctx.font = '12px Courier New';
+            ctx.fillText(electrode, x + 5, y + 15);
+        }
+
+        // --- SIGNAL PROCESSING HELPERS ---
+        function butterworthBandpass(data, low, high, sampleRate) {
+            const lowpass1 = iirFilter(data, high / (sampleRate / 2));
+            const highpass = iirFilter(lowpass1, low / (sampleRate / 2), 'high');
+            return highpass;
+        }
+
+        function iirFilter(data, cutoff, type = 'low') {
+            const rc = 1.0 / (2.0 * Math.PI * cutoff);
+            const alpha = 1.0 / (1.0 + rc);
+            const filtered = new Float32Array(data.length);
+            let last = 0;
+            for(let i=0; i<data.length; i++){
+                last += alpha * (data[i] - last);
+                filtered[i] = last;
+            }
+            if (type === 'high') {
+                for(let i=0; i<data.length; i++) filtered[i] = data[i] - filtered[i];
+            }
+            return filtered;
+        }
+
+        function getPhaseAndAmplitude(signal, phaseBand, ampBand, sampleRate) {
+            const phaseFiltered = butterworthBandpass(signal, phaseBand.low, phaseBand.high, sampleRate);
+            const ampFiltered = butterworthBandpass(signal, ampBand.low, ampBand.high, sampleRate);
+            const n = signal.length;
+            const phase = new Float32Array(n);
+            const ampEnvelope = new Float32Array(n);
+
+            for (let i = 1; i < n - 1; i++) {
+                const imag_phase = (phaseFiltered[i+1] - phaseFiltered[i-1]) / 2;
+                phase[i] = Math.atan2(imag_phase, phaseFiltered[i]);
+                const imag_amp = (ampFiltered[i+1] - ampFiltered[i-1]) / 2;
+                ampEnvelope[i] = Math.sqrt(ampFiltered[i] * ampFiltered[i] + imag_amp * imag_amp);
+            }
+            const smoothedAmp = iirFilter(ampEnvelope, 10 / (sampleRate / 2));
+            return { phase, amplitude: smoothedAmp };
+        }
+
+        function cwt(signal, scales) {
+            const result = []; const N = signal.length;
+            if (N === 0) return [];
+            for (let scaleIdx = 0; scaleIdx < scales.length; scaleIdx++) {
+                const scale = scales[scaleIdx]; const row = new Float32Array(N);
+                for (let t = 0; t < N; t++) {
+                    let real = 0, imag = 0;
+                    const waveletSupport = Math.min(Math.floor(scale * 4), N);
+                    for (let tau = 0; tau < waveletSupport; tau++) {
+                        const signalIdx = t + tau - Math.floor(waveletSupport/2);
+                        if (signalIdx >= 0 && signalIdx < N) {
+                            const normTime = (tau - waveletSupport/2) / scale;
+                            const envelope = Math.exp(-0.5 * normTime * normTime);
+                            const w_real = Math.cos(5 * normTime) * envelope;
+                            const w_imag = Math.sin(5 * normTime) * envelope;
+                            real += signal[signalIdx] * w_real;
+                            imag += signal[signalIdx] * w_imag;
+                        }
+                    }
+                    row[t] = Math.sqrt(real*real + imag*imag) / Math.sqrt(scale);
+                }
+                result.push(row);
+            }
+            return result;
+        }
+
+        function getColorFromMap(value, mapName) {
+            value = Math.max(0, Math.min(1, value)); let r, g, b;
+            switch(mapName) {
+                case 'viridis': r=255*Math.sqrt(.21); g=255*Math.sqrt(value*.8); b=255*Math.sqrt(0.3+value*0.7); break;
+                case 'plasma': r=255*Math.sqrt(0.07+value*0.8); g=255*Math.sqrt(0.01+value*0.5); b=255*Math.sqrt(0.6-value*0.5); break;
+                case 'hot': if(value<0.4){r=255*(value/0.4);g=0;b=0;}else if(value<0.8){r=255;g=255*((value-0.4)/0.4);b=0;}else{r=255;g=255;b=255*((value-0.8)/0.2);} break;
+            }
+            return `rgb(${Math.floor(r)},${Math.floor(g)},${Math.floor(b)})`;
+        }
+        
+        // --- UI AND CONTROL LOGIC ---
+        function togglePlayback() { isPlaying = !isPlaying; document.getElementById('playBtn').textContent = isPlaying ? '⏸️ Pause' : '▶️ Play'; }
+        function resetTime() { 
+            currentTime = 0; 
+            isPlaying = false; 
+            document.getElementById('playBtn').textContent = '▶️ Play';
+            historyBuffer = [];
+            nextHistoryX = 0;
+            viewTransform = { x: 0, scale: 1.0 };
+            updateView(); 
+        }
+        function setDisplayMode(mode) { 
+            displayMode = mode; 
+            document.querySelectorAll('.display-mode-btn').forEach(b => b.classList.remove('active')); 
+            document.getElementById(`${mode}Btn`).classList.add('active'); 
+            const isMoireOrTimeline = (mode === 'moire' || mode === 'timeline');
+            moireCanvas.style.display = isMoireOrTimeline ? 'block' : 'none';
+            document.getElementById('canvasContainer').style.cursor = (mode === 'timeline') ? 'grab' : 'default';
+            document.getElementById('timelineInstructions').style.display = (mode === 'timeline') ? 'block' : 'none';
+            updateView(); 
+        }
+        function updatePACLabels() { document.getElementById('pacPhaseValue').textContent = document.getElementById('pacPhase').options[document.getElementById('pacPhase').selectedIndex].text; document.getElementById('pacAmpValue').textContent = document.getElementById('pacAmp').options[document.getElementById('pacAmp').selectedIndex].text; }
+        function updateSliderValue(id, suf) { document.getElementById(id+'Value').textContent = document.getElementById(id).value + suf; }
+        function handleFileLoad(event) { const file = event.target.files[0]; if (!file) return; setStatus(`Loading ${file.name}...`); resetTime(); const reader = new FileReader(); reader.onload = e => { try { eegData = parseEDF(e.target.result); setStatus(`Loaded: ${file.name}`); document.getElementById('fileInputLabel').innerHTML = `✅ ${file.name}`; updateElectrodeButtons(); selectFrontalElectrodes(); } catch (err) { setStatus(`Error: ${err.message}`); } }; reader.readAsArrayBuffer(file); }
+        function updateElectrodeButtons() { const container = document.getElementById('electrodeButtons'); if (!container || !eegData) return; container.innerHTML = ''; eegData.channels.forEach(ch => { const btn = document.createElement('button'); btn.textContent = ch; btn.className = 'electrode-btn'; if(selectedElectrodes.has(ch)) btn.classList.add('selected'); btn.onclick = () => { if(selectedElectrodes.has(ch)) selectedElectrodes.delete(ch); else selectedElectrodes.add(ch); resetTime(); updateElectrodeButtons(); updateView(); }; container.appendChild(btn); }); }
+        function selectAllElectrodes() { selectedElectrodes.clear(); if (eegData) eegData.channels.forEach(ch => selectedElectrodes.add(ch)); resetTime(); updateElectrodeButtons(); updateView(); }
+        function clearElectrodes() { selectedElectrodes.clear(); resetTime(); updateElectrodeButtons(); updateView(); }
+        function selectFrontalElectrodes() { selectedElectrodes.clear(); const frontal = ['Fp1','Fp2','F3','F4','F7','F8','Fz']; if(eegData) frontal.forEach(ch => { if(eegData.channels.includes(ch)) selectedElectrodes.add(ch); }); resetTime(); updateElectrodeButtons(); updateView(); }
+        function selectParietalElectrodes() { selectedElectrodes.clear(); const parietal = ['P3','P4','P7','P8','Pz']; if(eegData) parietal.forEach(ch => { if(eegData.channels.includes(ch)) selectedElectrodes.add(ch); }); resetTime(); updateElectrodeButtons(); updateView(); }
+        function setStatus(msg) { document.getElementById('status').textContent = msg; }
+        
+        // --- ANIMATION AND INITIALIZATION ---
+        function animate() {
+            if (isPlaying && eegData) {
+                if (displayMode === 'timeline') {
+                    const newSliceData = calculatePACMoireSlice(currentTime);
+                    if (newSliceData) {
+                        historyBuffer.push({ x: nextHistoryX, data: newSliceData });
+                        nextHistoryX += SLICE_WIDTH;
+                    }
+                    // Auto-pan to follow the new data
+                    const canvasWidth = moireCanvas.width / window.devicePixelRatio;
+                    const targetX = -Math.max(0, (nextHistoryX * viewTransform.scale - canvasWidth + 50));
+                    viewTransform.x += (targetX - viewTransform.x) * 0.1; // Smooth pan
+                }
+                currentTime += 0.05; // Adjust speed for timeline
+                if (currentTime >= eegData.duration) { resetTime(); }
+            }
+            updateView(); // Always re-render to allow panning/zooming when paused
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('load', () => {
+            canvas = document.getElementById('scalogramCanvas');
+            ctx = canvas.getContext('2d');
+            moireCanvas = document.getElementById('moireCanvas');
+            moireCtx = moireCanvas.getContext('2d');
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = moireCanvas.width = rect.width * dpr;
+            canvas.height = moireCanvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            moireCtx.scale(dpr, dpr);
+            
+            setDisplayMode('grid');
+            updatePACLabels();
+            updateSliderValue('timeWindow', 's');
+            document.getElementById('fileInput').addEventListener('change', handleFileLoad);
+
+            // --- Timeline Pan/Zoom Listeners ---
+            const container = document.getElementById('canvasContainer');
+            container.addEventListener('mousedown', (e) => {
+                if (displayMode === 'timeline') {
+                    isPanning = true;
+                    lastMousePos = { x: e.pageX, y: e.pageY };
+                    container.style.cursor = 'grabbing';
+                }
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (isPanning) {
+                    const dx = e.pageX - lastMousePos.x;
+                    viewTransform.x += dx;
+                    lastMousePos = { x: e.pageX, y: e.pageY };
+                }
+            });
+            window.addEventListener('mouseup', () => {
+                isPanning = false;
+                container.style.cursor = 'grab';
+            });
+            container.addEventListener('wheel', (e) => {
+                if (displayMode !== 'timeline') return;
+                e.preventDefault();
+                const mouseX = e.offsetX;
+                const scaleAmount = 1 - e.deltaY * 0.001;
+
+                const worldXBeforeZoom = (mouseX - viewTransform.x) / viewTransform.scale;
+                viewTransform.scale *= scaleAmount;
+                viewTransform.scale = Math.max(0.1, Math.min(20, viewTransform.scale));
+                const worldXAfterZoom = (mouseX - viewTransform.x) / viewTransform.scale;
+
+                viewTransform.x += (worldXAfterZoom - worldXBeforeZoom) * viewTransform.scale;
+            });
+            
+            animate();
+        });
+
+        // --- ROBUST EDF PARSER ---
+        function parseEDF(buffer) {
+            const view = new DataView(buffer);
+            const decoder = new TextDecoder('ascii');
+            const header = {};
+            header.version = decoder.decode(buffer.slice(0, 8)).trim();
+            header.headerBytes = parseInt(decoder.decode(buffer.slice(184, 192)).trim());
+            header.numRecords = parseInt(decoder.decode(buffer.slice(236, 244)).trim());
+            header.recordDuration = parseFloat(decoder.decode(buffer.slice(244, 252)).trim());
+            header.numChannels = parseInt(decoder.decode(buffer.slice(252, 256)).trim());
+            const ns = header.numChannels;
+            if (ns <= 0 || ns > 500) throw new Error("Invalid number of channels in header.");
+            
+            const channelInfo = Array.from({length: ns}, (_, i) => ({
+                label: decoder.decode(buffer.slice(256 + i * 16, 256 + (i + 1) * 16)).trim(),
+                samplesPerRecord: parseInt(decoder.decode(buffer.slice(256 + ns * 216 + i * 8, 256 + ns * 216 + (i + 1) * 8)).trim()),
+                pMin: parseFloat(decoder.decode(buffer.slice(256 + ns * 104 + i * 8, 256 + ns * 104 + (i + 1) * 8)).trim()),
+                pMax: parseFloat(decoder.decode(buffer.slice(256 + ns * 112 + i * 8, 256 + ns * 112 + (i + 1) * 8)).trim()),
+                dMin: parseInt(decoder.decode(buffer.slice(256 + ns * 120 + i * 8, 256 + ns * 120 + (i + 1) * 8)).trim()),
+                dMax: parseInt(decoder.decode(buffer.slice(256 + ns * 128 + i * 8, 256 + ns * 128 + (i + 1) * 8)).trim())
+            }));
+
+            const sampleRate = channelInfo[0].samplesPerRecord / header.recordDuration;
+            const totalSamples = header.numRecords * channelInfo[0].samplesPerRecord;
+            const data = channelInfo.map(() => new Float32Array(totalSamples));
+            
+            let dataOffset = header.headerBytes;
+            for (let r = 0; r < header.numRecords; r++) {
+                const recordStartOffset = dataOffset;
+                for (let ch = 0; ch < ns; ch++) {
+                    const info = channelInfo[ch];
+                    const scale = (info.pMax - info.pMin) / (info.dMax - info.dMin);
+                    if (!isFinite(scale)) throw new Error(`Invalid scaling factor for channel ${info.label}`);
+                    const dc = info.pMin - scale * info.dMin;
+                    const startIdx = r * info.samplesPerRecord;
+                    let channelOffset = recordStartOffset;
+                    for(let prevCh = 0; prevCh < ch; prevCh++) {
+                        channelOffset += channelInfo[prevCh].samplesPerRecord * 2;
+                    }
+
+                    for (let s = 0; s < info.samplesPerRecord; s++) {
+                        const digitalValue = view.getInt16(channelOffset + s*2, true);
+                        data[ch][startIdx + s] = digitalValue * scale + dc;
+                    }
+                }
+                dataOffset += channelInfo.reduce((sum, ch) => sum + ch.samplesPerRecord * 2, 0);
+            }
+
+            return { channels: channelInfo.map(c => c.label), sampleRate, duration: totalSamples / sampleRate, data };
+        }
+    </script>
+</body>
+</html>
